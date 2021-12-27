@@ -16,8 +16,8 @@
  *  along with GRUB.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef GRUB_EFI_CC_H
-#define GRUB_EFI_CC_H 1
+#ifndef GRUB_EFI_CC_HEADER
+#define GRUB_EFI_CC_HEADER 1
 
 #include <grub/efi/api.h>
 #include <grub/efi/efi.h>
@@ -35,7 +35,9 @@ struct grub_efi_cc_version
 };
 typedef struct grub_efi_cc_version grub_efi_cc_version_t;
 
-/* EFI_CC Type/SubType definition. */
+/*
+ * EFI_CC Type/SubType definition
+ */
 #define GRUB_EFI_CC_TYPE_NONE	0
 #define GRUB_EFI_CC_TYPE_SEV	1
 #define GRUB_EFI_CC_TYPE_TDX	2
@@ -52,7 +54,9 @@ typedef grub_efi_uint32_t grub_efi_cc_event_log_format_t;
 typedef grub_efi_uint32_t grub_efi_cc_event_algorithm_bitmap_t;
 typedef grub_efi_uint32_t grub_efi_cc_mr_index_t;
 
-/* Intel TDX measure register index. */
+/*
+ * Intel TDX measure register index
+ */
 #define GRUB_TDX_MR_INDEX_MRTD	0
 #define GRUB_TDX_MR_INDEX_RTMR0	1
 #define GRUB_TDX_MR_INDEX_RTMR1	2
@@ -65,7 +69,9 @@ typedef grub_efi_uint32_t grub_efi_cc_mr_index_t;
 
 struct grub_efi_cc_event_header
 {
-  /* Size of the event header itself (sizeof(EFI_TD_EVENT_HEADER)). */
+  /*
+   * Size of the event header itself (sizeof(EFI_TD_EVENT_HEADER))
+   */
   grub_efi_uint32_t      HeaderSize;
 
   /*
@@ -74,26 +80,33 @@ struct grub_efi_cc_event_header
    */
   grub_efi_uint16_t      HeaderVersion;
 
-  /* Index of the MR that shall be extended. */
+  /*
+   * Index of the MR that shall be extended
+   */
   grub_efi_cc_mr_index_t MrIndex;
 
-  /* Type of the event that shall be extended (and optionally logged). */
+  /*
+   * Type of the event that shall be extended (and optionally logged)
+   */
   grub_efi_uint32_t      EventType;
 } GRUB_PACKED;
 typedef struct grub_efi_cc_event_header grub_efi_cc_event_header_t;
 
 struct grub_efi_cc_event
 {
-  /* Total size of the event including the Size component, the header and the Event data. */
+  /*
+   * Total size of the event including the Size component, the header and the
+   * Event data.
+   */
   grub_efi_uint32_t          Size;
   grub_efi_cc_event_header_t Header;
-  grub_efi_uint8_t           Event[0];
+  grub_efi_uint8_t           Event[1];
 } GRUB_PACKED;
 typedef struct grub_efi_cc_event grub_efi_cc_event_t;
 
 struct grub_efi_cc_boot_service_capability
 {
-  /* Allocated size of the structure. */
+  /* Allocated size of the structure */
   grub_efi_uint8_t                     Size;
 
   /*
@@ -110,42 +123,42 @@ struct grub_efi_cc_boot_service_capability
    */
   grub_efi_cc_version_t                ProtocolVersion;
 
-  /* Supported hash algorithms. */
+  /* Supported hash algorithms */
   grub_efi_cc_event_algorithm_bitmap_t HashAlgorithmBitmap;
 
-  /* Bitmap of supported event log formats. */
+  /* Bitmap of supported event log formats */
   grub_efi_cc_event_log_bitmap_t       SupportedEventLogs;
 
-  /* Indicates the CC type. */
+  /* Indicates the CC type */
   grub_efi_cc_type_t CcType;
 };
 typedef struct grub_efi_cc_boot_service_capability grub_efi_cc_boot_service_capability_t;
 
 struct grub_efi_cc_protocol
 {
-  grub_efi_status_t
-  (*get_capability) (struct grub_efi_cc_protocol *this,
-		     grub_efi_cc_boot_service_capability_t *ProtocolCapability);
-
-  grub_efi_status_t
-  (*get_event_log) (struct grub_efi_cc_protocol *this,
-		    grub_efi_cc_event_log_format_t EventLogFormat,
-		    grub_efi_physical_address_t *EventLogLocation,
-		    grub_efi_physical_address_t *EventLogLastEntry,
-		    grub_efi_boolean_t *EventLogTruncated);
-
-  grub_efi_status_t
-  (*hash_log_extend_event) (struct grub_efi_cc_protocol *this,
-			    grub_efi_uint64_t Flags,
-			    grub_efi_physical_address_t DataToHash,
-			    grub_efi_uint64_t DataToHashLen,
-			    grub_efi_cc_event_t *EfiCcEvent);
-
-  grub_efi_status_t
-  (*map_pcr_to_mr_index) (struct grub_efi_cc_protocol *this,
-			  grub_efi_uint32_t PcrIndex,
-			  grub_efi_cc_mr_index_t *MrIndex);
+  grub_efi_status_t (*get_capability) (
+	  struct grub_efi_cc_protocol *this,
+	  grub_efi_cc_boot_service_capability_t *ProtocolCapability);
+  grub_efi_status_t (*get_event_log) (
+	  struct grub_efi_cc_protocol *this,
+	  grub_efi_cc_event_log_format_t EventLogFormat,
+	  grub_efi_physical_address_t *EventLogLocation,
+	  grub_efi_physical_address_t *EventLogLastEntry,
+	  grub_efi_boolean_t *EventLogTruncated);
+  grub_efi_status_t (*hash_log_extend_event) (
+	  struct grub_efi_cc_protocol *this,
+	  grub_efi_uint64_t Flags,
+	  grub_efi_physical_address_t DataToHash,
+	  grub_efi_uint64_t DataToHashLen,
+	  grub_efi_cc_event_t *EfiCcEvent);
+  grub_efi_status_t (*map_pcr_to_mr_index) (
+	  struct grub_efi_cc_protocol *this,
+	  grub_efi_uint32_t PcrIndex,
+	  grub_efi_cc_mr_index_t *MrIndex);
 };
 typedef struct grub_efi_cc_protocol grub_efi_cc_protocol_t;
+
+grub_err_t grub_cc_log_event (unsigned char *buf, grub_size_t size,
+			      grub_uint8_t pcr, const char *description);
 
 #endif
