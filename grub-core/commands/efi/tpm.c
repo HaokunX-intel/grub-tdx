@@ -22,6 +22,7 @@
 #include <grub/i18n.h>
 #include <grub/efi/api.h>
 #include <grub/efi/efi.h>
+#include <grub/efi/cc.h>
 #include <grub/efi/tpm.h>
 #include <grub/mm.h>
 #include <grub/tpm.h>
@@ -31,6 +32,7 @@ typedef TCG_PCR_EVENT grub_tpm_event_t;
 
 static grub_efi_guid_t tpm_guid = EFI_TPM_GUID;
 static grub_efi_guid_t tpm2_guid = EFI_TPM2_GUID;
+static grub_efi_guid_t cc_measurement_guid = GRUB_EFI_CC_MEASUREMENT_PROTOCOL_GUID;
 
 static grub_efi_handle_t *grub_tpm_handle;
 static grub_uint8_t grub_tpm_version;
@@ -135,17 +137,17 @@ grub_efi_log_event_status (grub_efi_status_t status)
   switch (status)
     {
     case GRUB_EFI_SUCCESS:
-      return 0;
+      return GRUB_ERR_NONE;
     case GRUB_EFI_DEVICE_ERROR:
-      return grub_error (GRUB_ERR_IO, N_("Command failed"));
+      return grub_error (GRUB_ERR_IO, N_("command failed"));
     case GRUB_EFI_INVALID_PARAMETER:
-      return grub_error (GRUB_ERR_BAD_ARGUMENT, N_("Invalid parameter"));
+      return grub_error (GRUB_ERR_BAD_ARGUMENT, N_("invalid parameter"));
     case GRUB_EFI_BUFFER_TOO_SMALL:
-      return grub_error (GRUB_ERR_BAD_ARGUMENT, N_("Output buffer too small"));
+      return grub_error (GRUB_ERR_BAD_ARGUMENT, N_("output buffer too small"));
     case GRUB_EFI_NOT_FOUND:
       return grub_error (GRUB_ERR_UNKNOWN_DEVICE, N_("TPM unavailable"));
     default:
-      return grub_error (GRUB_ERR_UNKNOWN_DEVICE, N_("Unknown TPM error"));
+      return grub_error (GRUB_ERR_UNKNOWN_DEVICE, N_("unknown TPM error"));
     }
 }
 
@@ -156,13 +158,14 @@ grub_tpm1_log_event (grub_efi_handle_t tpm_handle, unsigned char *buf,
 {
   grub_tpm_event_t *event;
   grub_efi_status_t status;
-  grub_efi_tpm_protocol_t *tpm;
+  static grub_efi_tpm_protocol_t *tpm = NULL;
   grub_efi_physical_address_t lastevent;
   grub_uint32_t algorithm;
   grub_uint32_t eventnum = 0;
 
-  tpm = grub_efi_open_protocol (tpm_handle, &tpm_guid,
-				GRUB_EFI_OPEN_PROTOCOL_GET_PROTOCOL);
+  if (tpm == NULL)
+    tpm = grub_efi_open_protocol (tpm_handle, &tpm_guid,
+				  GRUB_EFI_OPEN_PROTOCOL_GET_PROTOCOL);
 
   if (!grub_tpm1_present (tpm))
     return 0;
@@ -175,7 +178,7 @@ grub_tpm1_log_event (grub_efi_handle_t tpm_handle, unsigned char *buf,
   event->PCRIndex = pcr;
   event->EventType = EV_IPL;
   event->EventSize = grub_strlen (description) + 1;
-  grub_memcpy (event->Event, description, event->EventSize);
+  grub_strcpy (event->Event, description);
 
   algorithm = TCG_ALG_SHA;
   status = efi_call_7 (tpm->log_extend_event, tpm, (grub_addr_t) buf, (grub_uint64_t) size,
@@ -192,10 +195,11 @@ grub_tpm2_log_event (grub_efi_handle_t tpm_handle, unsigned char *buf,
 {
   EFI_TCG2_EVENT *event;
   grub_efi_status_t status;
-  grub_efi_tpm2_protocol_t *tpm;
+  static grub_efi_tpm2_protocol_t *tpm = NULL;
 
-  tpm = grub_efi_open_protocol (tpm_handle, &tpm2_guid,
-				GRUB_EFI_OPEN_PROTOCOL_GET_PROTOCOL);
+  if (tpm == NULL)
+    tpm = grub_efi_open_protocol (tpm_handle, &tpm2_guid,
+				  GRUB_EFI_OPEN_PROTOCOL_GET_PROTOCOL);
 
   if (!grub_tpm2_present (tpm))
     return 0;
@@ -212,7 +216,7 @@ grub_tpm2_log_event (grub_efi_handle_t tpm_handle, unsigned char *buf,
   event->Header.EventType = EV_IPL;
   event->Size =
     sizeof (*event) - sizeof (event->Event) + grub_strlen (description) + 1;
-  grub_memcpy (event->Event, description, grub_strlen (description) + 1);
+  grub_strcpy (event->Event, description);
 
   status = efi_call_5 (tpm->hash_log_extend_event, tpm, 0, (grub_addr_t) buf,
 		       (grub_uint64_t) size, event);
@@ -221,12 +225,60 @@ grub_tpm2_log_event (grub_efi_handle_t tpm_handle, unsigned char *buf,
   return grub_efi_log_event_status (status);
 }
 
+static
+void
+grub_cc_log_event (unsigned char *buf, grub_size_t size, grub_uint8_t pcr,
+		   const char *description)
+{
+  grub_efi_cc_event_t *event;
+  grub_efi_status_t status;
+  static grub_efi_cc_protocol_t *cc = NULL;
+  grub_efi_cc_mr_index_t mr;
+
+  if (cc == NULL)
+    if ((cc = grub_efi_locate_protocol (&cc_measurement_guid, NULL)) == NULL)
+      return;
+
+  status = efi_call_3 (cc->map_pcr_to_mr_index, cc, pcr, &mr)
+  if (status != GRUB_EFI_SUCCESS)
+    {
+      grub_efi_log_event_status (status);
+      return;
+    }
+
+  event = grub_zalloc (sizeof (grub_efi_cc_event_t)
+		       + grub_strlen (description) + 1);
+  if (event == NULL)
+    {
+      grub_error (GRUB_ERR_OUT_OF_MEMORY,
+		  N_("cannot allocate CC event buffer"));
+      return;
+    }
+
+  event->Header.HeaderSize = sizeof (grub_efi_cc_event_header_t);
+  event->Header.HeaderVersion = GRUB_EFI_CC_EVENT_HEADER_VERSION;
+  event->Header.MrIndex = mr;
+  event->Header.EventType = EV_IPL;
+  event->Size = sizeof (*event) + grub_strlen (description) + 1;
+  grub_strcpy (event->Event, description);
+
+  status = efi_call_5 (cc->hash_log_extend_event, cc, 0,
+		       (grub_efi_physical_address_t) buf,
+		       (grub_efi_uint64_t) size, event);
+  grub_free (event);
+
+  if (status != GRUB_EFI_SUCCESS)
+    grub_efi_log_event_status (status);
+}
+
 grub_err_t
 grub_tpm_measure (unsigned char *buf, grub_size_t size, grub_uint8_t pcr,
 		    const char *description)
 {
   grub_efi_handle_t tpm_handle;
   grub_efi_uint8_t protocol_version;
+
+  grub_cc_log_event(buf, size, pcr, description);
 
   if (!grub_tpm_handle_find (&tpm_handle, &protocol_version))
     return 0;
